@@ -1,8 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.faults import (
+    AT_PACK,
+    AT_ROUTE,
+    AT_STOP,
+    FAULT_PACK_REJECTED,
+    FAULT_ROUTE_NOT_FOUND,
+    FAULT_STOP_INVALID,
+    PackFault,
+)
 from app.models.models import BagItem, DeliveryRoute, PackBag, RejectRecord, SubscriberStop
 from app.schemas.schemas import (
     BagItemOut,
@@ -13,7 +22,7 @@ from app.schemas.schemas import (
     StopOut,
     WeightOut,
 )
-from app.services.pack_engine import StopItem, pack_route
+from app.services.pack_engine import StopItem, invalid_stop_field, pack_route
 
 api_router = APIRouter()
 
@@ -40,7 +49,28 @@ def stops(route_id: int | None = None, db: Session = Depends(get_db)):
 def pack(body: PackRequest, db: Session = Depends(get_db)):
     route = db.get(DeliveryRoute, body.route_id)
     if not route:
-        raise HTTPException(404, "路线不存在")
+        raise PackFault(404, FAULT_ROUTE_NOT_FOUND, f"路线 {body.route_id} 不存在", AT_ROUTE)
+
+    stops = db.scalars(
+        select(SubscriberStop).where(SubscriberStop.route_id == route.id).order_by(SubscriberStop.seq)
+    ).all()
+    if not stops:
+        raise PackFault(
+            409, FAULT_PACK_REJECTED, f"路线 {route.id} 没有订户点，无法装袋", AT_PACK
+        )
+    items = [
+        StopItem(s.id, s.seq, s.weight_kg, s.volume_l, s.name) for s in stops
+    ]
+    for item in items:
+        bad = invalid_stop_field(item)
+        if bad:
+            raise PackFault(
+                422,
+                FAULT_STOP_INVALID,
+                f"订户点 #{item.stop_id}（seq {item.seq}）{bad}",
+                AT_STOP,
+            )
+
     # clear previous pack for route
     old_bags = db.scalars(select(PackBag).where(PackBag.route_id == route.id)).all()
     for b in old_bags:
@@ -52,12 +82,6 @@ def pack(body: PackRequest, db: Session = Depends(get_db)):
         db.delete(r)
     db.flush()
 
-    stops = db.scalars(
-        select(SubscriberStop).where(SubscriberStop.route_id == route.id).order_by(SubscriberStop.seq)
-    ).all()
-    items = [
-        StopItem(s.id, s.seq, s.weight_kg, s.volume_l, s.name) for s in stops
-    ]
     result = pack_route(items, route.max_weight_kg, route.max_volume_l)
     out_bags: list[PackBag] = []
     for bag in result.bags:

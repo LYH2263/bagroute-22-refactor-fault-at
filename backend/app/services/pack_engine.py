@@ -28,6 +28,15 @@ class PackResult:
     rejects: list[tuple[StopItem, str]]
 
 
+def invalid_stop_field(item: StopItem) -> str | None:
+    """订户点字段不合法时返回说明，合法返回 None。"""
+    if item.weight_kg <= 0:
+        return f"weight_kg 必须为正数（当前 {item.weight_kg}）"
+    if item.volume_l <= 0:
+        return f"volume_l 必须为正数（当前 {item.volume_l}）"
+    return None
+
+
 def can_fit(bag: Bag, item: StopItem, max_weight: float, max_volume: float) -> bool:
     return (
         bag.weight_kg + item.weight_kg <= max_weight + 1e-9
