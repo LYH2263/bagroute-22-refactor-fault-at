@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api/client";
+import { api, FaultError } from "../api/client";
 type R = { id: number; name: string };
 type Bag = { id: number; bag_index: number; weight_kg: number; volume_l: number; items: { stop_name: string }[] };
 export default function PackPage() {
@@ -7,14 +7,18 @@ export default function PackPage() {
   const [rid, setRid] = useState<number | "">("");
   const [bags, setBags] = useState<Bag[]>([]);
   const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
+  const [fault, setFault] = useState<FaultError | null>(null);
   useEffect(() => { api<R[]>("/routes").then(r => { setRoutes(r); if (r[0]) setRid(r[0].id); }); }, []);
   async function run() {
-    setMsg(""); setErr("");
+    setMsg(""); setErr(""); setFault(null);
     try {
       const out = await api<Bag[]>("/pack", { method: "POST", body: JSON.stringify({ route_id: rid }) });
       setBags(out);
       setMsg(`完成装袋：${out.length} 袋`);
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    } catch (e) {
+      if (e instanceof FaultError) setFault(e);
+      else setErr(e instanceof Error ? e.message : String(e));
+    }
   }
   return (<>
     <h2>装袋</h2>
@@ -23,6 +27,13 @@ export default function PackPage() {
       <button onClick={run}>按路线顺序双约束装袋</button>
     </div>
     {msg && <div className="ok">{msg}</div>}
+    {fault && (
+      <div className="err">
+        <div>fault：{fault.fault}</div>
+        <div>at：{fault.at}</div>
+        <div>detail：{fault.detail}</div>
+      </div>
+    )}
     {err && <div className="err">{err}</div>}
     {bags.map(b => (
       <div key={b.id}>

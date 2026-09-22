@@ -32,6 +32,18 @@ docker compose up --build
 2. 在装袋页选择路线执行双约束装袋。
 3. 袋明细与袋重查看结果，拒收页查看超限订户。
 
+## 装袋失败响应
+
+`POST /api/pack` 失败时统一返回 `{"fault", "detail", "at"}` 三个键，`at` 只取 `route` / `stop` / `pack`：
+
+| fault | at | 含义 | 状态码 |
+| --- | --- | --- | --- |
+| `route_not_found` | `route` | 路线找不到 | 404 |
+| `invalid_stop` | `stop` | 订户点字段不合法 | 422 |
+| `pack_rejected` | `pack` | 装袋过程业务拒绝 | 409 |
+
+同类失败连续两次，`fault` 与 `at` 相同；装袋页会把三个键展示给操作员。
+
 ## 开发与测试
 
 ```bash
